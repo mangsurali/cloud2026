@@ -1,0 +1,138 @@
+# Redis for Cache
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: redis, namespace: cloud-dynamics}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: redis}}
+  template:
+    metadata: {labels: {app: redis}}
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports: [{containerPort: 6379}]
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {cpu: 200m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: redis, namespace: cloud-dynamics}
+spec:
+  selector: {app: redis}
+  ports: [{port: 6379, targetPort: 6379}]
+---
+# RabbitMQ for Event Queue
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: rabbitmq, namespace: cloud-dynamics}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: rabbitmq}}
+  template:
+    metadata: {labels: {app: rabbitmq}}
+    spec:
+      containers:
+      - name: rabbitmq
+        image: rabbitmq:3.12-management-alpine
+        ports: 
+        - {containerPort: 5672}
+        - {containerPort: 15672}
+        - {containerPort: 15692}
+        resources:
+          requests: {cpu: 200m, memory: 256Mi}
+          limits: {cpu: 500m, memory: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: rabbitmq, namespace: cloud-dynamics}
+spec:
+  selector: {app: rabbitmq}
+  ports: 
+  - {name: amqp, port: 5672, targetPort: 5672}
+  - {name: management, port: 15672, targetPort: 15672}
+  - {name: prometheus, port: 15692, targetPort: 15692}
+---
+# Postgres for Persistent Storage
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: postgres, namespace: cloud-dynamics}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: postgres}}
+  template:
+    metadata: {labels: {app: postgres}}
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:17-alpine
+        env:
+        - {name: POSTGRES_DB, value: postgres}
+        - {name: POSTGRES_USER, value: postgres}
+        - {name: POSTGRES_PASSWORD, value: postgres}
+        ports: [{containerPort: 5432}]
+        resources:
+          requests: {cpu: 100m, memory: 128Mi}
+          limits: {cpu: 500m, memory: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres, namespace: cloud-dynamics}
+spec:
+  selector: {app: postgres}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+# API Gateway
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: event-driven-api, namespace: cloud-dynamics}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: event-driven-api}}
+  template:
+    metadata: {labels: {app: event-driven-api}}
+    spec:
+      containers:
+      - name: event-driven-api
+        image: cloud-dynamics/event-driven-api:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - {name: ROLE, value: api}
+        - {name: REDIS_HOST, value: redis}
+        - {name: RMQ_HOST, value: rabbitmq}
+        ports: [{containerPort: 8080}]
+        resources:
+          requests: {cpu: 100m, memory: 128Mi}
+          limits: {cpu: 300m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: event-driven-api, namespace: cloud-dynamics}
+spec:
+  selector: {app: event-driven-api}
+  ports: [{port: 8080, targetPort: 8080}]
+---
+# Worker
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: event-driven-api-worker, namespace: cloud-dynamics}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: event-driven-api-worker}}
+  template:
+    metadata: {labels: {app: event-driven-api-worker}}
+    spec:
+      containers:
+      - name: event-driven-api-worker
+        image: cloud-dynamics/event-driven-api:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - {name: ROLE, value: worker}
+        - {name: REDIS_HOST, value: redis}
+        - {name: RMQ_HOST, value: rabbitmq}
+        - {name: DB_HOST, value: postgres}
+        - {name: WORK_CYCLES, value: "10000"}
+        resources:
+          requests: {cpu: 200m, memory: 128Mi}
+          limits: {cpu: 500m, memory: 256Mi}

@@ -7,8 +7,9 @@ from urllib.error import URLError, HTTPError
 
 def args():
     p = argparse.ArgumentParser()
-    p.add_argument("--url", required=True)
-    p.add_argument("--profile", choices=["constant","ramp","burst","periodic","variable"], required=True)
+    p.add_argument("--url", required=True, help="Comma-separated list of URLs for mixed endpoints")
+    p.add_argument("--url-weights", help="Comma-separated weights corresponding to URLs, e.g. 80,20")
+    p.add_argument("--profile", choices=["constant","ramp","burst","periodic","variable","staircase","spiky_diurnal","overload"], required=True)
     p.add_argument("--duration", type=float, required=True)
     p.add_argument("--timeout", type=float, default=5)
     p.add_argument("--sample-interval", type=float, default=1)
@@ -25,6 +26,12 @@ def args():
     p.add_argument("--max-rps", type=float)
     p.add_argument("--period-seconds", type=float, default=60)
     p.add_argument("--change-interval", type=float, default=30)
+    
+    # New args for complex scenarios
+    p.add_argument("--staircase-steps", type=int, default=5)
+    p.add_argument("--diurnal-spike-prob", type=float, default=0.05)
+    p.add_argument("--diurnal-spike-multiplier", type=float, default=3.0)
+    
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--workers", type=int, default=256)
     return p.parse_args()
@@ -36,7 +43,7 @@ def percentile(vals, q):
     return s[i]
 
 def target_rate(a, elapsed, rng, variable_state):
-    if a.profile == "constant":
+    if a.profile == "constant" or a.profile == "overload":
         return max(0.0, a.rps)
     if a.profile == "ramp":
         f = min(1.0, max(0.0, elapsed / max(a.duration, 1e-9)))
@@ -48,12 +55,32 @@ def target_rate(a, elapsed, rng, variable_state):
         mid = (a.min_rps+a.max_rps)/2
         amp = (a.max_rps-a.min_rps)/2
         return max(0.0, mid + amp*math.sin(2*math.pi*elapsed/max(a.period_seconds,1e-9)))
-    bucket = int(elapsed // max(a.change_interval, 1e-9))
-    if variable_state[0] != bucket:
-        variable_state[:] = [bucket, rng.uniform(a.min_rps, a.max_rps)]
-    return max(0.0, variable_state[1])
+    if a.profile == "variable":
+        bucket = int(elapsed // max(a.change_interval, 1e-9))
+        if variable_state[0] != bucket:
+            variable_state[:] = [bucket, rng.uniform(a.min_rps, a.max_rps)]
+        return max(0.0, variable_state[1])
+    if a.profile == "staircase":
+        step_duration = max(a.duration / max(a.staircase_steps, 1), 1e-9)
+        current_step = min(int(elapsed // step_duration), a.staircase_steps - 1)
+        step_rps = a.start_rps + (a.end_rps - a.start_rps) * (current_step / max(a.staircase_steps - 1, 1))
+        return max(0.0, step_rps)
+    if a.profile == "spiky_diurnal":
+        # Sine wave base + random spikes
+        mid = (a.min_rps+a.max_rps)/2
+        amp = (a.max_rps-a.min_rps)/2
+        base_rate = max(0.0, mid + amp*math.sin(2*math.pi*elapsed/max(a.period_seconds,1e-9)))
+        
+        # Determine if we are in a spike (spikes last for 1 sample interval)
+        bucket = int(elapsed // a.sample_interval)
+        if variable_state[0] != bucket:
+            is_spike = rng.random() < a.diurnal_spike_prob
+            variable_state[:] = [bucket, base_rate * a.diurnal_spike_multiplier if is_spike else base_rate]
+        return max(0.0, variable_state[1])
+    return 0.0
 
-def one_request(url, timeout):
+def one_request(urls, weights, timeout, rng):
+    url = rng.choices(urls, weights=weights, k=1)[0]
     t0 = time.perf_counter()
     ok = False
     try:
@@ -73,8 +100,16 @@ def main():
     next_sample = start + a.sample_interval
     next_send = start
     rows, futures = [], []
-    lock = threading.Lock()
     interval_sent = 0
+
+    urls = [u.strip() for u in a.url.split(",")]
+    if a.url_weights:
+        weights = [float(w) for w in a.url_weights.split(",")]
+    else:
+        weights = [1.0] * len(urls)
+    
+    if len(urls) != len(weights):
+        raise SystemExit("Number of URLs must match number of weights")
 
     out = None
     writer = None
@@ -96,7 +131,7 @@ def main():
             if rate <= 0:
                 time.sleep(min(0.05, a.duration-elapsed))
             elif now >= next_send:
-                futures.append(pool.submit(one_request, a.url, a.timeout))
+                futures.append(pool.submit(one_request, urls, weights, a.timeout, rng))
                 interval_sent += 1
                 next_send = max(next_send + 1.0/rate, now)
             else:
@@ -124,7 +159,6 @@ def main():
                 interval_sent = 0
                 next_sample += a.sample_interval
 
-        # Wait for outstanding requests, but do not extend offered-load scheduling.
         results = [f.result() for f in futures]
         if writer and (results or interval_sent):
             success = sum(1 for ok,_ in results if ok)

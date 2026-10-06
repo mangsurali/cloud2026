@@ -11,7 +11,7 @@ CALLER_NAMESPACE=${NAMESPACE-}
 APP=${1:?Usage: deploy.sh APP}
 
 case "$APP" in
-  stateless-api|cpu-bound|memory-stateful|database-api|cache-api|microservices) ;;
+  stateless-api|cpu-bound|memory-stateful|database-api|cache-api|microservices|event-driven-api) ;;
   *) echo "Unknown application: $APP" >&2; exit 1 ;;
 esac
 

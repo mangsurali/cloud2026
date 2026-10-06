@@ -19,7 +19,7 @@ build_one() {
 }
 
 if [ "$APP" = all ]; then
-  for n in stateless-api cpu-bound memory-stateful database-api cache-api microservices; do
+  for n in stateless-api cpu-bound memory-stateful database-api cache-api microservices event-driven-api; do
     build_one "$n"
   done
 else

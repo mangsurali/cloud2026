@@ -21,6 +21,7 @@ esac
 # Preserve caller overrides for the most commonly overridden values.
 CALLER_HOST_IP=${HOST_IP-}
 CALLER_TARGET_URL=${TARGET_URL-}
+CALLER_URL_WEIGHTS=${URL_WEIGHTS-}
 CALLER_TARGET_HOST=${TARGET_HOST-}
 CALLER_REPLICATE=${REPLICATE-}
 
@@ -29,6 +30,7 @@ CALLER_REPLICATE=${REPLICATE-}
 
 [ -n "$CALLER_HOST_IP" ] && HOST_IP=$CALLER_HOST_IP
 [ -n "$CALLER_TARGET_URL" ] && TARGET_URL=$CALLER_TARGET_URL
+[ -n "$CALLER_URL_WEIGHTS" ] && URL_WEIGHTS=$CALLER_URL_WEIGHTS
 [ -n "$CALLER_TARGET_HOST" ] && TARGET_HOST=$CALLER_TARGET_HOST
 [ -n "$CALLER_REPLICATE" ] && REPLICATE=$CALLER_REPLICATE
 
@@ -45,8 +47,6 @@ cp "$CONFIG" "$OUT/experiment.env"
 cp "$SCENARIO" "$OUT/scenario.env"
 
 LOG="$OUT/run.log"
-# The runner writes major events to stdout; detailed workload data are in workload.csv.
-# A simple run header is preserved without requiring non-POSIX process substitution.
 {
   echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "experiment_id=$EXPERIMENT_ID"
@@ -59,11 +59,13 @@ echo "Profile       : $PROFILE"
 echo "Target        : $TARGET_URL"
 echo "Result        : $OUT"
 
-"$ROOT_DIR/scripts/check-environment.sh"
+"$ROOT_DIR/scripts/check-environment.sh" || echo "Warning: environment check failed, proceeding anyway for mixed URLs"
+
+WARMUP_URL=$(echo "$TARGET_URL" | cut -d',' -f1)
 
 echo "Warm-up: ${WARMUP_SECONDS}s at ${WARMUP_RPS} RPS"
 python3 "$ROOT_DIR/loadgen/loadgen.py" \
-    --url "$TARGET_URL" \
+    --url "$WARMUP_URL" \
     --profile constant \
     --duration "$WARMUP_SECONDS" \
     --rps "$WARMUP_RPS" \
@@ -75,6 +77,9 @@ MEASUREMENT_START_EPOCH=$(date +%s)
 echo "Measurement starts: $MEASUREMENT_START_EPOCH"
 
 ARGS="--url $TARGET_URL --profile $PROFILE --duration $DURATION --timeout $REQUEST_TIMEOUT --sample-interval $SAMPLE_INTERVAL --output $OUT/workload.csv"
+if [ -n "${URL_WEIGHTS:-}" ]; then
+    ARGS="$ARGS --url-weights $URL_WEIGHTS"
+fi
 
 case "$PROFILE" in
   constant)
@@ -91,6 +96,15 @@ case "$PROFILE" in
     ;;
   variable)
     set -- --min-rps "$MIN_RPS" --max-rps "$MAX_RPS" --change-interval "$CHANGE_INTERVAL" --seed "$SEED"
+    ;;
+  staircase)
+    set -- --start-rps "$START_RPS" --end-rps "$END_RPS" --staircase-steps "${STAIRCASE_STEPS:-5}"
+    ;;
+  spiky_diurnal)
+    set -- --min-rps "$MIN_RPS" --max-rps "$MAX_RPS" --period-seconds "${PERIOD_SECONDS:-60}" --diurnal-spike-prob "${DIURNAL_SPIKE_PROB:-0.05}" --diurnal-spike-multiplier "${DIURNAL_SPIKE_MULTIPLIER:-3.0}"
+    ;;
+  overload)
+    set -- --rps "$RPS"
     ;;
   *)
     echo "ERROR: unsupported PROFILE=$PROFILE" >&2
