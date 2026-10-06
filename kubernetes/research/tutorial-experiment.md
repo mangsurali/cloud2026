@@ -4,6 +4,24 @@ Tutorial ini akan memandu Anda secara langkah demi langkah untuk membangun dan m
 
 ---
 
+## Memahami Arsitektur Event-Driven API
+
+Sebelum memulai eksperimen, mari kita pahami terlebih dahulu bagaimana arsitektur `event-driven-api` bekerja dan mengapa arsitektur ini penting.
+
+### Bagaimana Aplikasi Ini Bekerja?
+Berbeda dengan arsitektur sinkron (*synchronous*) tradisional di mana klien harus menunggu hingga seluruh proses di sisi *server* selesai, aplikasi ini menggunakan pola asinkron (*asynchronous*) dengan *Message Broker* (antrean). Alur kerjanya adalah sebagai berikut:
+1. **API Gateway (Penerima):** Saat menerima *request* HTTP dari klien (misal: *checkout* pesanan), API tidak langsung memprosesnya. Ia membuat ID unik, mencatat statusnya secara kilat ke memori **Redis**, lalu "melempar" data pesanan tersebut ke antrean **RabbitMQ**. Setelah itu, API **langsung membalas** klien dengan respons `202 Accepted` tanpa membuat klien menunggu.
+2. **RabbitMQ (Antrean Buffer):** Bertindak sebagai peredam kejut (*shock absorber*). Jika trafik membeludak, pesan akan mengantre dengan aman di sini alih-alih membuat sistem utama *down*.
+3. **Worker (Pemroses Latar Belakang):** Aplikasi *Worker* berjalan tanpa henti di belakang layar. Ia akan "menarik" antrean dari RabbitMQ satu demi satu sesuai kapasitasnya, melakukan tugas berat (seperti komputasi dan menyimpan data secara persisten ke **PostgreSQL**), lalu memberitahu RabbitMQ bahwa pesan tersebut telah selesai (*Ack*).
+
+### *Use Case* (Kasus Penggunaan) di Dunia Nyata
+Arsitektur seperti ini merupakan standar industri modern dan lazim dijumpai pada sistem berskala masif:
+* **E-Commerce (Flash Sale & Harbolnas):** Saat jutaan orang menekan tombol *Checkout* secara bersamaan, *database* relasional biasa pasti akan tumbang (*crash*). Dengan arsitektur ini, pesanan ditampung dengan cepat oleh RabbitMQ, lalu barisan *worker* perlahan-lahan mencatatnya ke dalam *database* dan memproses pembayaran tanpa mengganggu kelancaran *website*.
+* **Pemrosesan Media (Video/Gambar):** Platform seperti YouTube atau Instagram. Saat *upload* video, Anda langsung mendapat pesan sukses. Namun, proses kompresi (*transcoding*) ke berbagai resolusi (360p, 720p, 1080p) dilakukan berjam-jam di belakang layar oleh *worker* tanpa mengharuskan halaman web terus *loading*.
+* **Sistem Notifikasi Massal & *Ticketing*:** Mengirimkan ribuan email sekaligus atau sistem pemesanan tiket konser untuk mencegah insiden tiket *oversold* karena semua diproses secara terurut (FIFO) dari antrean.
+
+---
+
 ## Tahap 1: Persiapan dan Deploy Aplikasi Target
 
 Pada tahap ini, kita akan menggunakan *bundle* `cloud-dynamics-applications` untuk membuat *image* dari arsitektur *event-driven*, dan menjalankannya di klaster Kubernetes lokal (seperti `kind`).
