@@ -169,6 +169,11 @@ else
     linkerd install \
         | kubectl apply -f -
 
+    echo "Waiting for control plane deployments..."
+    kubectl rollout status deployment/linkerd-destination -n "${LINKERD_NAMESPACE}" --timeout=180s
+    kubectl rollout status deployment/linkerd-identity -n "${LINKERD_NAMESPACE}" --timeout=180s
+    kubectl rollout status deployment/linkerd-proxy-injector -n "${LINKERD_NAMESPACE}" --timeout=180s
+
 fi
 
 
@@ -226,6 +231,17 @@ kubectl rollout status \
     -n "${VIZ_NAMESPACE}" \
     --timeout=180s
 
+# pastikan tap dan prometheus juga Ready sebelum lanjut
+kubectl rollout status \
+    deployment/tap \
+    -n "${VIZ_NAMESPACE}" \
+    --timeout=180s || true
+
+kubectl rollout status \
+    deployment/tap-injector \
+    -n "${VIZ_NAMESPACE}" \
+    --timeout=180s || true
+
 echo
 echo "Viz pods:"
 kubectl get pods \
@@ -256,8 +272,10 @@ fi
 LINKERD_WEB_PORT=$(
     kubectl get svc web \
         -n "${VIZ_NAMESPACE}" \
-        -o jsonpath='{.spec.ports[0].port}'
+        -o jsonpath='{.spec.ports[?(@.name=="http")].port}'
 )
+# ponytail: fallback kalau nama port beda antar versi Linkerd
+LINKERD_WEB_PORT="${LINKERD_WEB_PORT:-8084}"
 
 
 echo "Linkerd Viz service port:"
