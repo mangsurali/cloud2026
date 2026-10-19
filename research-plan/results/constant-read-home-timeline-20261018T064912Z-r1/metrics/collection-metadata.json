@@ -1,0 +1,55 @@
+{
+  "experiment_id": "constant-read-home-timeline-20261018T064912Z-r1",
+  "application": ".*",
+  "namespace": "cloud-dynamics",
+  "prometheus_url": "http://prometheus.127.0.0.1.sslip.io/",
+  "start_epoch": 1792306162.0,
+  "end_epoch": 1792306192.0,
+  "step": 1.0,
+  "metrics": {
+    "CPU_USAGE": {
+      "status": "ok",
+      "rows": 820
+    },
+    "CPU_THROTTLED": {
+      "status": "ok",
+      "rows": 0
+    },
+    "MEMORY_WORKING_SET": {
+      "status": "ok",
+      "rows": 837
+    },
+    "NETWORK_RX": {
+      "status": "ok",
+      "rows": 818
+    },
+    "NETWORK_TX": {
+      "status": "ok",
+      "rows": 818
+    },
+    "RESTARTS": {
+      "status": "ok",
+      "rows": 837
+    },
+    "READY_PODS": {
+      "status": "ok",
+      "rows": 31
+    },
+    "LINKERD_REQUEST_RATE": {
+      "status": "ok",
+      "rows": 0
+    },
+    "LINKERD_SUCCESS_RATE": {
+      "status": "ok",
+      "rows": 0
+    },
+    "LINKERD_LATENCY_P95": {
+      "status": "ok",
+      "rows": 0
+    },
+    "RABBITMQ_QUEUE_MESSAGES": {
+      "status": "ok",
+      "rows": 0
+    }
+  }
+}
