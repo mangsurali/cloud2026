@@ -3,6 +3,8 @@
 Dokumen ini adalah panduan langkah-demi-langkah bagi mahasiswa baru untuk menjalankan **dataset penelitian** berbasis aplikasi microservices **SocialNetwork (DeathStarBench)** pada klaster Kubernetes, dengan pipeline eksperimen **Cloud Dynamics** (`workload.csv` + metrik Prometheus → `combined.csv`).
 
 > **Mode Remote (default):** klaster berada di mesin lain (`HOST_IP=10.160.4.43`, diatur di `config/experiment.env`). Load test dan penarikan metrik berjalan penuh dari mesin ini via HTTP (ingress `*.sslip.io`) — **tidak perlu kubectl**. Kubectl hanya dibutuhkan untuk deploy, Jaeger trace, dan pod-kill (lihat §5).
+>
+> **Ingin mereplikasi environment dari nol?** Ikuti `REPLICATION.md` — panduan lengkap setup server → deploy → injeksi Linkerd → jalankan seluruh dataset pengujian.
 
 ---
 

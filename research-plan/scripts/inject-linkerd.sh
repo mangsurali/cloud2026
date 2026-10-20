@@ -171,16 +171,30 @@ else
 fi
 
 echo ">> [6/6] Seeding ulang data pengguna & graf sosial..."
-if HOST_IP=127.0.0.1 "$SCRIPT_DIR/2-init-data.sh"; then
+# Pilih hostname yang benar-benar cocok dengan aturan ingress (uji keduanya)
+APP_HOST_OK=""
+for H in "$HOST_IP" 127.0.0.1; do
+    CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 8 \
+        "http://social-network.${H}.sslip.io/" 2>/dev/null || echo 000)
+    if [ "$CODE" = "200" ]; then
+        APP_HOST_OK=$H
+        break
+    fi
+done
+if [ -z "$APP_HOST_OK" ]; then
+    echo "ERROR: ingress social-network tidak merespons dari server (cek deploy & HOST_IP)" >&2
+    exit 1
+fi
+echo "   (memakai HOST_IP=$APP_HOST_OK — host ingress yang valid)"
+if HOST_IP="$APP_HOST_OK" "$SCRIPT_DIR/2-init-data.sh"; then
     echo "[OK ] Seeding selesai"
 else
-    echo "warn: seeding gagal — jalankan manual: HOST_IP=127.0.0.1 ./scripts/2-init-data.sh" >&2
+    echo "warn: seeding gagal — jalankan manual: HOST_IP=$APP_HOST_OK ./scripts/2-init-data.sh" >&2
     exit 1
 fi
 
-# Smoke test
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 \
-    "http://social-network.127.0.0.1.sslip.io/wrk2-api/home-timeline/read?user_id=1&start=0&stop=5" || echo 000)
+    "http://social-network.${APP_HOST_OK}.sslip.io/wrk2-api/home-timeline/read?user_id=1&start=0&stop=5" || echo 000)
 echo
 echo "=========================================================="
 echo ">> INJEKSI SELESAI. Smoke test home-timeline: HTTP $CODE"
