@@ -52,20 +52,49 @@ kubectl cluster-info >/dev/null 2>&1 || {
     exit 1; }
 
 echo ">> [1/6] Cek kontrol plane Linkerd..."
-if ! kubectl get deploy -n linkerd destination >/dev/null 2>&1; then
-    echo "ERROR: kontrol plane Linkerd tidak ditemukan di namespace 'linkerd'." >&2
-    echo "Instal dulu (di server): https://linkerd.io/2/getting-started/" >&2
-    echo "  linkerd install --crds | kubectl apply -f -" >&2
-    echo "  linkerd install       | kubectl apply -f -" >&2
-    echo "  linkerd check" >&2
+echo "   context : $(kubectl config current-context 2>/dev/null || echo 'unknown')"
+echo "   server  : $(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || echo 'unknown')"
+
+LNAMESPACE=${LINKERD_NAMESPACE:-linkerd}
+if ! kubectl get ns "$LNAMESPACE" >/dev/null 2>&1; then
+    cat >&2 <<EOF
+ERROR: namespace '$LNAMESPACE' TIDAK ADA di klaster yang ditunjuk kubectl di atas.
+Kemungkinan: kubectl mengarah ke klaster/konteks yang berbeda dari yang dipakai
+saat menginstal Linkerd. Cek:
+  kubectl config get-contexts          # daftar konteks
+  kubectl get ns                       # daftar namespace di konteks aktif
+  kubectl config use-context <nama>    # ganti konteks
+  export KUBECONFIG=/path/ke/kubeconfig  # atau tunjuk kubeconfig yang benar
+EOF
     exit 1
 fi
-NOTREADY=$(kubectl get deploy -n linkerd --no-headers 2>/dev/null | awk '$2!=$4{n++} END{print n+0}')
-if [ "$NOTREADY" -gt 0 ]; then
-    echo ">> Kontrol plane belum semua selesai, menunggu..."
-    kubectl wait --for=condition=Available deploy --all -n linkerd --timeout=300s || true
+
+# Nama deployment: 'destination' (linkerd install CLI) atau 'linkerd-destination' (Helm)
+DEST_DEPLOY=$(kubectl get deploy -n "$LNAMESPACE" -o name 2>/dev/null \
+    | grep -E 'destination$' | head -n1 || true)
+if [ -z "$DEST_DEPLOY" ]; then
+    echo "ERROR: deployment destination tidak ditemukan di namespace '$LNAMESPACE'." >&2
+    echo "Deployment yang ada di namespace tersebut:" >&2
+    kubectl get deploy -n "$LNAMESPACE" >&2 || true
+    cat >&2 <<EOF
+Kalau namespace kosong / tidak ada, instal kontrol plane Linkerd (di server):
+  linkerd install --crds | kubectl apply -f -
+  linkerd install       | kubectl apply -f -
+  linkerd check
+Atau via Helm:
+  helm install linkerd linkerd/linkerd2 --create-namespace -n linkerd
+EOF
+    exit 1
 fi
-echo "[OK ] Kontrol plane Linkerd siap"
+echo "[OK ] Kontrol plane Linkerd ditemukan: $DEST_DEPLOY (ns $LNAMESPACE)"
+NOTREADY=$(kubectl get deploy -n "$LNAMESPACE" --no-headers 2>/dev/null | awk '$2!=$4{n++} END{print n+0}')
+if [ "${NOTREADY:-0}" -gt 0 ]; then
+    echo ">> Kontrol plane belum semua selesai, menunggu (maks 5 menit)..."
+    kubectl wait --for=condition=Available deploy --all -n "$LNAMESPACE" --timeout=300s || true
+fi
+if command -v linkerd >/dev/null 2>&1; then
+    linkerd check 2>/dev/null | tail -n 3 || echo "   (linkerd check melaporkan masalah — lanjut)"
+fi
 
 echo ">> [2/6] Annotate namespace $NAMESPACE..."
 kubectl annotate ns "$NAMESPACE" linkerd.io/inject=enabled --overwrite
