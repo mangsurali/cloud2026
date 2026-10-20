@@ -1,0 +1,21 @@
+{
+  "experiment_id": "constant-mixed-20261020T021330Z-r1",
+  "profile": "constant",
+  "workload_type": "mixed",
+  "target_url": "http://social-network.10.160.4.43.sslip.io",
+  "host_ip": "10.160.4.43",
+  "measurement_start_epoch": 1792462423,
+  "measurement_end_epoch": 1792462489,
+  "sample_interval_seconds": 1.0,
+  "warmup_seconds": 10,
+  "cooldown_seconds": 10,
+  "replicate": 1,
+  "application": {
+    "name": "social-network",
+    "architecture": "microservices-deathstarbench"
+  },
+  "runtime": {
+    "python": "3.10.12",
+    "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35"
+  }
+}

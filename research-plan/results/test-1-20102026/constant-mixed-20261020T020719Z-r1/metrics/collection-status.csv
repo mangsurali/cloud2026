@@ -1,0 +1,12 @@
+metric,status,rows,query
+CPU_USAGE,ok,1664,"sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=""cloud-dynamics"",pod=~"".*.*"",container!="""",container!=""POD""}[1m]))"
+CPU_THROTTLED,ok,0,"sum by (pod) (rate(container_cpu_cfs_throttled_seconds_total{namespace=""cloud-dynamics"",pod=~"".*.*"",container!="""",container!=""POD""}[1m]))"
+MEMORY_WORKING_SET,ok,1809,"sum by (pod) (container_memory_working_set_bytes{namespace=""cloud-dynamics"",pod=~"".*.*"",container!="""",container!=""POD""})"
+NETWORK_RX,ok,1527,"sum by (pod) (rate(container_network_receive_bytes_total{namespace=""cloud-dynamics"",pod=~"".*.*""}[1m]))"
+NETWORK_TX,ok,1527,"sum by (pod) (rate(container_network_transmit_bytes_total{namespace=""cloud-dynamics"",pod=~"".*.*""}[1m]))"
+RESTARTS,ok,1809,"sum by (pod) (kube_pod_container_status_restarts_total{namespace=""cloud-dynamics"",pod=~"".*.*""})"
+READY_PODS,ok,67,"sum(kube_pod_status_ready{namespace=""cloud-dynamics"",pod=~"".*.*"",condition=""true""})"
+LINKERD_REQUEST_RATE,ok,0,"sum(rate(request_total{namespace=""cloud-dynamics"",direction=""inbound"",dst=~"".*.*""}[1m]))"
+LINKERD_SUCCESS_RATE,ok,0,"sum(rate(response_total{namespace=""cloud-dynamics"",direction=""inbound"",dst=~"".*.*"",classification=""success""}[1m])) / sum(rate(response_total{namespace=""cloud-dynamics"",direction=""inbound"",dst=~"".*.*""}[1m]))"
+LINKERD_LATENCY_P95,ok,0,"histogram_quantile(0.95,sum by (le) (rate(response_latency_ms_bucket{namespace=""cloud-dynamics"",direction=""inbound"",dst=~"".*.*""}[1m])))"
+RABBITMQ_QUEUE_MESSAGES,ok,0,"sum(rabbitmq_queue_messages{queue=""order_queue""})"

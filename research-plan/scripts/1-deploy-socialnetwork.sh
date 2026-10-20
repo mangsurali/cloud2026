@@ -9,14 +9,13 @@ REPO_ROOT=$(cd -- "$ROOT_DIR/.." && pwd)
 # Add local kubernetes binaries to PATH if present
 export PATH="$REPO_ROOT/cloud2023/kubernetes/bin:$PATH"
 
-# Resolve KUBECONFIG: honor existing env var first, then look for the homelab
-# Kind kubeconfig. If neither exists, try to regenerate it with `kind`.
+# Resolve KUBECONFIG: honor existing env var, then ~/.kube/config (remote
+# cluster), then the homelab Kind kubeconfig path.
 if [ -z "${KUBECONFIG:-}" ]; then
-    if [ -f "$REPO_ROOT/cloud2023/kubernetes/setup-cluster/kind/kubeconfig" ]; then
+    if [ -f "$HOME/.kube/config" ]; then
+        export KUBECONFIG="$HOME/.kube/config"
+    elif [ -f "$REPO_ROOT/cloud2023/kubernetes/setup-cluster/kind/kubeconfig" ]; then
         export KUBECONFIG="$REPO_ROOT/cloud2023/kubernetes/setup-cluster/kind/kubeconfig"
-    elif command -v kind >/dev/null 2>&1; then
-        echo "NOTE: kubeconfig not found, exporting from kind cluster 'mylab99'..."
-        kind export kubeconfig --name mylab99
     fi
 else
     export KUBECONFIG

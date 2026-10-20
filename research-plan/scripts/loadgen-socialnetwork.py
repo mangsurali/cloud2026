@@ -32,7 +32,7 @@ def args():
     p.add_argument("--max-users", type=int, default=962)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--workers", type=int, default=128)
-    p.add_argument("--workload-type", choices=["mixed", "read-home-timeline", "read-user-timeline", "compose-post"], default="mixed", help="DeathStarBench scenario type")
+    p.add_argument("--workload-type", choices=["mixed", "read-heavy", "write-heavy", "read-home-timeline", "read-user-timeline", "compose-post"], default="mixed", help="DeathStarBench scenario type")
     p.add_argument("--self-check", action="store_true", help="Run internal unit tests and exit")
     return p.parse_args()
 
@@ -72,7 +72,9 @@ def build_social_request(base_url, max_users, rng, workload_type="mixed"):
     - read-home-timeline: 100% GET /wrk2-api/home-timeline/read
     - read-user-timeline: 100% GET /wrk2-api/user-timeline/read
     - compose-post: 100% POST /wrk2-api/post/compose
-    - mixed: 60% home timeline, 30% user timeline, 10% compose post
+    - mixed: 60% home timeline, 30% user timeline, 10% compose post (DSB standard)
+    - read-heavy: 45% home timeline, 50% user timeline, 5% compose post
+    - write-heavy: 25% home timeline, 25% user timeline, 50% compose post
     """
     user_id = rng.randint(0, max_users - 1)
     base = base_url.rstrip("/")
@@ -83,6 +85,22 @@ def build_social_request(base_url, max_users, rng, workload_type="mixed"):
         kind = "user"
     elif workload_type == "compose-post":
         kind = "compose"
+    elif workload_type == "read-heavy":
+        coin = rng.random()
+        if coin < 0.45:
+            kind = "home"
+        elif coin < 0.95:
+            kind = "user"
+        else:
+            kind = "compose"
+    elif workload_type == "write-heavy":
+        coin = rng.random()
+        if coin < 0.25:
+            kind = "home"
+        elif coin < 0.50:
+            kind = "user"
+        else:
+            kind = "compose"
     else:
         coin = rng.random()
         if coin < 0.60:
@@ -157,6 +175,23 @@ def run_self_check():
     assert "user-timeline" in req_user.full_url and req_user.get_method() == "GET"
     req_compose = build_social_request("http://localhost:8080", 100, rng, "compose-post")
     assert "compose" in req_compose.full_url and req_compose.get_method() == "POST"
+
+    # 4. read-heavy / write-heavy mix ratio test
+    kinds = {"read-heavy": [], "write-heavy": []}
+    for wt in kinds:
+        rng2 = random.Random(7)
+        for _ in range(1000):
+            r = build_social_request("http://localhost:8080", 100, rng2, wt)
+            if r.get_method() == "POST":
+                kinds[wt].append("compose")
+            elif "home-timeline" in r.full_url:
+                kinds[wt].append("home")
+            else:
+                kinds[wt].append("user")
+    compose_ratio_rh = kinds["read-heavy"].count("compose") / 1000.0
+    compose_ratio_wh = kinds["write-heavy"].count("compose") / 1000.0
+    assert 0.0 < compose_ratio_rh < 0.12, f"read-heavy compose ratio {compose_ratio_rh} out of range"
+    assert 0.38 < compose_ratio_wh < 0.62, f"write-heavy compose ratio {compose_ratio_wh} out of range"
 
     print("All self-check assertions passed successfully!")
 
