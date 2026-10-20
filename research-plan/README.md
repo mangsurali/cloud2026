@@ -51,6 +51,7 @@ Setiap run menghasilkan folder di `results/<EXPERIMENT_ID>/`:
 | | 10 | Write-heavy (50% tulis) | `./scripts/run-dsb-scenario.sh 10-write-heavy 1` | Biaya relatif jalur tulis |
 | | 11 | Jaeger trace | `./scripts/run-jaeger-trace.sh 1` | Distribusi latency **per-hop** antar microservice |
 | | 12 | Pod-kill saat load | `./scripts/run-pod-kill-test.sh home-timeline-service 1` | Ketahanan (resilience) & self-healing |
+| | 13 | Linkerd monitor | `./scripts/run-linkerd-monitor.sh 1` | Metrik emas Linkerd (RPS, success, p95) per microservice |
 
 **Replicate:** jalankan tiap skenario dengan argumen `1`, `2`, `3` → 3 hasil per skenario (mean ± std dev).
 
@@ -117,6 +118,49 @@ REMOTE_SSH_HOST=<user>@10.160.4.43 ./scripts/0-connect-remote.sh tunnel   # seka
 ./scripts/run-pod-kill-test.sh home-timeline-service 1
 ```
 
+### Skenario 13 — Monitoring microservice via Linkerd (dua langkah, dua mesin)
+
+Metrik Linkerd (`request_total`, `response_total`, `response_latency_us_bucket`)
+dihasilkan oleh **sidecar proxy** di tiap pod — bukan oleh kontrol plane.
+Kontrol plane (UI `linkerd.10.160.4.43.sslip.io`) boleh sudah terpasang, tetapi
+kalau pod aplikasi belum di-inject sidecar, metriknya tetap kosong.
+
+**Langkah A — sekali saja, di SERVER klaster (10.160.4.43):**
+```bash
+git pull   # ambil script research-plan
+./scripts/inject-linkerd.sh
+```
+Skrip ini: annotate namespace `cloud-dynamics` (`linkerd.io/inject=enabled`) →
+rollout restart semua deployment → tunggu semua pod `Running 2/2`
+(aplikasi + `linkerd-proxy`) → verifikasi metrik muncul di Prometheus →
+**seeding ulang** data 50 pengguna (data hilang saat restart, karena emptyDir) →
+smoke test home-timeline.
+
+**Langkah B — di MESIN LOKAL (tanpa kubectl, HTTP saja):**
+```bash
+./scripts/run-linkerd-monitor.sh 1     # replicate 1; ulangi 2, 3
+```
+Menjalankan beban `mixed` 25 RPS 60s (output homelab biasa: `workload.csv`,
+`combined.csv` — kolom `LINKERD_*` kini terisi) **sambil** mem-poll Prometheus
+tiap detik untuk 3 metrik emas per pod microservice:
+* `linkerd-metrics/request-rate.csv` — RPS inbound per pod
+* `linkerd-metrics/success-rate.csv` — rasio sukses per pod
+* `linkerd-metrics/latency-p95.csv` — p95 latency (ms) per pod
+* `linkerd-summary.csv` — tabel ringkas per service: total RPS, success rate,
+  p95 tertinggi → kontribusi tiap microservice selama pengujian.
+
+Catatan:
+* Nama metrik latency Linkerd asli adalah `response_latency_us_bucket`
+  (**mikrodetik**) — skrip sudah mengonversi ke ms (query lama di
+  `cloud-dynamics-metrics` memakai `_ms_` yang tidak ada, itulah salah satu
+  sebab kolom lama kosong).
+* Tiap request melewati 2 sidecar proxy per hop → tambahan latency ~1–3 ms.
+  Ini memang objek ukuran sebuah service mesh.
+* Ingin beban berbeda? `DURATION=120 RPS=50 ./scripts/run-linkerd-monitor.sh 1`
+* Bila skrip berhenti dengan "metrik Linkerd kosong": sidecar belum ter-injeksi
+  atau Prometheus belum selesai scrape — jalankan Langkah A di server, tunggu
+  ~1 menit, coba lagi.
+
 ---
 
 ## 5. Catatan Teknis Mode Remote
@@ -151,6 +195,8 @@ research-plan/
 │   ├── run-dsb-scenario.sh             # ★ runner 1 skenario (load + metrik)
 │   ├── run-jaeger-trace.sh             # ★ skenario 11: trace per-hop
 │   ├── run-pod-kill-test.sh            # ★ skenario 12: fault injection
+│   ├── inject-linkerd.sh               # ★ skenario 13a: injeksi sidecar (jalankan DI SERVER)
+│   ├── run-linkerd-monitor.sh          # ★ skenario 13b: monitoring Linkerd (jalankan DI LOKAL)
 │   └── run-all-research.sh             # ★ jalankan semua rangkaian otomatis
 └── results/                            # dataset penelitian (per EXPERIMENT_ID)
 ```
